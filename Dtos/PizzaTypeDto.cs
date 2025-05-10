@@ -1,4 +1,6 @@
-﻿namespace MataPizza.Backend.Dtos
+﻿using MataPizza.Backend.Models;
+
+namespace MataPizza.Backend.Dtos
 {
     public class PizzaTypeDto
     {
@@ -6,5 +8,6 @@
         public string Name { get; set; }
         public string Category { get; set; }
         public string Ingredients { get; set; }
+        public List<PizzaDto> Pizzas { get; set; } = new();
     }
 }

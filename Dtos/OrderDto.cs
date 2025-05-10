@@ -1,4 +1,6 @@
-﻿namespace MataPizza.Backend.Dtos
+﻿
+
+namespace MataPizza.Backend.Dtos
 {
     public class OrderDto
     {
@@ -7,5 +9,6 @@
         public string OrderTime { get; set; }
         public int TotalItems { get; set; }
         public decimal TotalPrice { get; set; }
+        public List<OrderDetailDto> OrderDetails { get; set; }
     }
 }
