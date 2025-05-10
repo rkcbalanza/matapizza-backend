@@ -41,23 +41,35 @@ namespace MataPizza.Backend.Controllers
             [FromQuery] string search = "",
             [FromQuery] string category = "")
         {
+            // Validate page number and size
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 10;
+
+            // Normalize search term
+            string searchLower = search?.ToLower().Trim() ?? "";
+            bool hasSearchTerm = !string.IsNullOrWhiteSpace(searchLower);
+
+            // Normalize category once
+            string categoryLower = category?.ToLower().Trim() ?? "";
+            bool hasCategory = !string.IsNullOrWhiteSpace(categoryLower);
+
             // Start with base query
             IQueryable<PizzaType> query = _context.PizzaTypes;
 
-            // Apply search filter if search term provided
-            if (!string.IsNullOrWhiteSpace(search))
+            // Apply filters conditionally
+            if (hasSearchTerm)
             {
-                string searchLower = search.ToLower();
+                // Use compiled LINQ expression for better performance with EF Core
                 query = query.Where(pt =>
-                    pt.Name.ToLower().Contains(searchLower) ||
-                    pt.Category.ToLower().Contains(searchLower) ||
-                    pt.Ingredients.ToLower().Contains(searchLower));
+                    EF.Functions.Like(pt.Name.ToLower(), $"%{searchLower}%") ||
+                    EF.Functions.Like(pt.Category.ToLower(), $"%{searchLower}%") ||
+                    EF.Functions.Like(pt.Ingredients.ToLower(), $"%{searchLower}%"));
             }
 
-            // Apply category filter if provided
-            if (!string.IsNullOrWhiteSpace(category))
+            if (hasCategory)
             {
-                query = query.Where(pt => pt.Category.Equals(category));
+                // Use EF.Functions.Like for better database translation
+                query = query.Where(pt => EF.Functions.Like(pt.Category.ToLower(), categoryLower));
             }
 
             // Get total count for pagination
@@ -85,7 +97,14 @@ namespace MataPizza.Backend.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<PizzaTypeDto>> GetPizzaTypeById(string id)
         {
-            var pizzaType = await _context.PizzaTypes
+            // Validate ID
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return BadRequest("PizzaType ID cannot be null or empty.");
+            }
+            try
+            {
+                var pizzaType = await _context.PizzaTypes
                 .Include(pt => pt.Pizzas) // Include related Pizza data
                 .Where(pt => pt.PizzaTypeId == id)
                 .Select(pt => new PizzaTypeDto
@@ -102,14 +121,21 @@ namespace MataPizza.Backend.Controllers
                 })
                 .FirstOrDefaultAsync();
 
-            // Return 404 Not Found if the PizzaType is not found
-            if (pizzaType == null)
-            {
-                return NotFound($"Pizza type with ID {id} not found.");
-            }
+                // Return 404 Not Found if the PizzaType is not found
+                if (pizzaType == null)
+                {
+                    return NotFound($"Pizza type with ID {id} not found.");
+                }
 
-            // Return the PizzaType details
-            return Ok(pizzaType);
+                // Return the PizzaType details
+                return Ok(pizzaType);
+            }
+            catch (Exception ex)
+            {
+                // Return 500 Internal Server Error for any unexpected exceptions
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+
+            }
         }
 
         // This endpoint retrieves PizzaType Categories only,

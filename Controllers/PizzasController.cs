@@ -38,7 +38,14 @@ namespace MataPizza.Backend.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<PizzaDto>> GetPizzaById(string id)
         {
-            var pizza = await _context.Pizzas
+            // Validate ID
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return BadRequest("Pizza ID cannot be null or empty.");
+            }
+            try
+            {
+                var pizza = await _context.Pizzas
                 .Include(p => p.PizzaType) // Include related PizzaType data
                 .Where(p => p.PizzaId == id)
                 .Select(p => new PizzaDto
@@ -50,14 +57,19 @@ namespace MataPizza.Backend.Controllers
                 })
                 .FirstOrDefaultAsync();
 
-            // Return 404 Not Found if the Pizza is not found
-            if (pizza == null)
-            {
-                return NotFound($"Pizza with ID '{id}' not found.");
-            }
+                // Return 404 Not Found if the Pizza is not found
+                if (pizza == null)
+                {
+                    return NotFound($"Pizza with ID '{id}' not found.");
+                }
 
-            // Return the found Pizza
-            return Ok(pizza);
-        }
+                // Return the found Pizza
+                return Ok(pizza);
+            }
+            catch (Exception ex)
+            {
+                // Return 500 Internal Server Error with exception message
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
     }
 }

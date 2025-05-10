@@ -47,8 +47,14 @@ namespace MataPizza.Backend.Controllers
             [FromQuery] decimal minPrice = 0,
             [FromQuery] decimal maxPrice = 0)
         {
+            // Validate page number and size
+            if (page < 1) page = 1;
+            if (pageSize < 1 || pageSize > 100) pageSize = 10;
+
             // Start with base query
-            IQueryable<Order> query = _context.Orders;
+            IQueryable<Order> query = _context.Orders
+                .Include(o => o.OrderDetails)
+                .ThenInclude(od => od.Pizza);
 
             // Apply search filter if search term provided
             if (!string.IsNullOrWhiteSpace(search))
@@ -56,60 +62,67 @@ namespace MataPizza.Backend.Controllers
                 query = query.Where(o => o.OrderId.ToString().Contains(search));
             }
 
-            // Apply range date filter if provided
-            // Apply start date
-            if (!string.IsNullOrWhiteSpace(startDate) && DateTime.TryParse(startDate, out DateTime start))
+            // Parsing DateTime strings to DateTime objects
+            DateTime start = DateTime.MinValue;
+            DateTime end = DateTime.MaxValue;
+
+            if (!string.IsNullOrWhiteSpace(startDate) && DateTime.TryParse(startDate, out start))
             {
-                query = query.Where(o => o.OrderDate >= start);
+                // Start variable is already set
             }
-            // Apply end date
-            if (!string.IsNullOrWhiteSpace(endDate) && DateTime.TryParse(endDate, out DateTime end))
+            if (!string.IsNullOrWhiteSpace(endDate) && DateTime.TryParse(endDate, out end))
             {
-                query = query.Where(o => o.OrderDate <= end);
+                // Adjust to end of day for inclusive filtering
+                end = end.Date.AddDays(1).AddTicks(-1);
             }
 
+            // Apply date filters once
+            query = query.Where(o => o.OrderDate >= start && o.OrderDate <= end);
 
-            // Apply price range filter if provided
-            // Apply min range
+            // Prepare an optimized projection for price calculations
+            var ordersWithPrice = query.Select(o => new
+            {
+                Order = o,
+                TotalPrice = o.OrderDetails.Sum(od => od.Quantity * od.Pizza.Price)
+            });
+
+            // Apply price range filters
             if (minPrice > 0)
             {
-                query = query.Where(o => _context.OrderDetails
-                    .Where(od => od.OrderId == o.OrderId)
-                    .Sum(od => od.Quantity * od.Pizza.Price) >= minPrice);
-            }
-            // Apply max range
-            if (maxPrice > 0)
-            {
-                query = query.Where(o => _context.OrderDetails
-                    .Where(od => od.OrderId == o.OrderId)
-                    .Sum(od => od.Quantity * od.Pizza.Price) <= maxPrice);
+                ordersWithPrice = ordersWithPrice.Where(o => o.TotalPrice >= minPrice);
             }
 
-            // Get total count for pagination
-            var totalCount = await query.CountAsync();
-            var totalSales = await query.Where(o => o.OrderId == o.OrderId)
-                .SumAsync(o => _context.OrderDetails
-                    .Where(od => od.OrderId == o.OrderId)
-                    .Sum(od => od.Quantity * od.Pizza.Price));
-            var totalItems = await query.Where(o => o.OrderId == o.OrderId)
-                .SumAsync(o => _context.OrderDetails
-                    .Where(od => od.OrderId == o.OrderId)
-                    .Sum(od => od.Quantity));
+            if (maxPrice > 0)
+            {
+                ordersWithPrice = ordersWithPrice.Where(o => o.TotalPrice <= maxPrice);
+            }
+
+            // Perform calculations for summary stats with optimized queries
+            var totalCount = await ordersWithPrice.CountAsync();
+            var totalSales = await ordersWithPrice.SumAsync(o => o.TotalPrice);
+            var totalItems = await ordersWithPrice.SumAsync(o => o.Order.OrderDetails.Sum(od => od.Quantity));
+
             // Validate page number and size
-            var orders = await query
-                .Include(o => o.OrderDetails) // Include related OrderDetails data
-                .Skip((page - 1) * pageSize) // Skip the previous pages
-                .Take(pageSize) // Take the current page size
-                .Select(o => new OrderDto
-                {
-                    OrderId = o.OrderId,
-                    OrderDate = o.OrderDate.ToString("yyyy-MM-dd"),
-                    OrderTime = o.OrderTime.ToString(@"hh\:mm\:ss"),
-                    TotalItems = _context.OrderDetails.Where(od => od.OrderId == o.OrderId).Sum(od => od.Quantity), // Sum quantities for total items
-                    TotalPrice = _context.OrderDetails.Where(od => od.OrderId == o.OrderId)
-                                              .Sum(od => od.Quantity * od.Pizza.Price) // Sum total price
-                })
-                .ToListAsync();
+            var orders = await ordersWithPrice
+               .Skip((page - 1) * pageSize)
+               .Take(pageSize)
+               .Select(o => new OrderDto
+               {
+                   OrderId = o.Order.OrderId,
+                   OrderDate = o.Order.OrderDate.ToString("yyyy-MM-dd"),
+                   OrderTime = o.Order.OrderTime.ToString(@"hh\:mm\:ss"),
+                   TotalItems = o.Order.OrderDetails.Sum(od => od.Quantity),
+                   TotalPrice = o.TotalPrice,
+                   OrderDetails = o.Order.OrderDetails.Select(od => new OrderDetailDto
+                   {
+                       PizzaTypeName = od.Pizza.PizzaType.Name,
+                       Quantity = od.Quantity,
+                       PriceEach = od.Pizza.Price,
+                       TotalPrice = od.Quantity * od.Pizza.Price
+                   }).ToList()
+               })
+               .ToListAsync();
+
             return Ok(new { totalCount, totalSales, totalItems, orders });
         }
 
@@ -118,16 +131,14 @@ namespace MataPizza.Backend.Controllers
         public async Task<ActionResult<OrderDto>> GetOrderById(int id)
         {
             var order = await _context.Orders
-                .Include(o => o.OrderDetails) // Include related OrderDetails data
                 .Where(o => o.OrderId == id)
                 .Select(o => new OrderDto
                 {
                     OrderId = o.OrderId,
                     OrderDate = o.OrderDate.ToString("yyyy-MM-dd"),
                     OrderTime = o.OrderTime.ToString(@"hh\:mm\:ss"),
-                    TotalItems = _context.OrderDetails.Where(od => od.OrderId == o.OrderId).Sum(od => od.Quantity), // Sum quantities for total items
-                    TotalPrice = _context.OrderDetails.Where(od => od.OrderId == o.OrderId)
-                                              .Sum(od => od.Quantity * od.Pizza.Price),
+                    TotalItems = o.OrderDetails.Sum(od => od.Quantity), // Sum quantities for total items
+                    TotalPrice = o.OrderDetails.Sum(od => od.Quantity * od.Pizza.Price), // Sum total price
                     OrderDetails = o.OrderDetails.Select(od => new OrderDetailDto
                     {
                         Quantity = od.Quantity,
