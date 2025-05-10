@@ -1,4 +1,5 @@
 using MataPizza.Backend.Data;
+using MataPizza.Backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -23,6 +24,8 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<MataPizzaDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddScoped<CsvImporter>();
 
 var app = builder.Build();
 
