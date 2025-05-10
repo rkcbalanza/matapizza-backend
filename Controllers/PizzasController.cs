@@ -26,7 +26,6 @@ namespace MataPizza.Backend.Controllers
                 {
                     PizzaId = p.PizzaId,
                     PizzaTypeId = p.PizzaTypeId,
-                    PizzaTypeName = p.PizzaType.Name,
                     Size = p.Size,
                     Price = p.Price,
                 })
@@ -46,7 +45,6 @@ namespace MataPizza.Backend.Controllers
                 {
                     PizzaId = p.PizzaId,
                     PizzaTypeId = p.PizzaTypeId,
-                    PizzaTypeName = p.PizzaType.Name,
                     Size = p.Size,
                     Price = p.Price,
                 })

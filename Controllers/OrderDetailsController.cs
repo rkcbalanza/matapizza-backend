@@ -68,5 +68,28 @@ namespace MataPizza.Backend.Controllers
             // Return the OrderDetail data
             return Ok(orderDetail);
         }
+
+        // This endpoint retrieves all OrderDetails for a specific Order by its ID.
+        [HttpGet("order/{orderId}")]
+        public async Task<ActionResult<IEnumerable<OrderDetailDto>>> GetOrderDetailsByOrderId(int orderId)
+        {
+            var orderDetails = await _context.OrderDetails
+                .Include(od => od.Pizza) // Include related Pizza data
+                .Include(od => od.Order) // Include related Order data
+                .Where(od => od.OrderId == orderId)
+                .Select(od => new OrderDetailDto
+                {
+                    OrderDetailId = od.OrderDetailId,
+                    OrderId = od.OrderId,
+                    PizzaId = od.PizzaId,
+                    Quantity = od.Quantity,
+                    PizzaTypeName = od.Pizza.PizzaType.Name,
+                    Size = od.Pizza.Size,
+                    PriceEach = od.Pizza.Price, // Price of each pizza
+                    TotalPrice = od.Quantity * od.Pizza.Price, // Calculate total price
+                })
+                .ToListAsync();
+            return Ok(orderDetails);
+        }
     }
 }
